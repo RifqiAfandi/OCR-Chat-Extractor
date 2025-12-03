@@ -9,7 +9,7 @@
 'use strict';
 
 // API Configuration
-const API_BASE_URL = 'http://localhost:5000';
+const API_BASE_URL = '';
 const STORAGE_KEY = 'ocr_chat_data';
 
 // State Management

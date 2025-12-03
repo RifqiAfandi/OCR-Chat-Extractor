@@ -142,6 +142,26 @@ PENTING: Hanya kembalikan JSON array, tanpa markdown atau teks tambahan."""
         return jsonify({'error': 'Processing failed. Please try again.'}), 500
 
 
+@app.route('/api/validate-key', methods=['POST'])
+def validate_key():
+    """Validate Gemini API key"""
+    try:
+        data = request.get_json()
+        api_key = data.get('api_key', '')
+        
+        if not api_key:
+            return jsonify({'valid': False, 'error': 'API key is required'})
+        
+        # Test the API key by making a simple request
+        genai.configure(api_key=api_key)
+        model = genai.GenerativeModel('gemini-2.0-flash')
+        response = model.generate_content('Hello')
+        
+        return jsonify({'valid': True})
+    except Exception as e:
+        return jsonify({'valid': False, 'error': 'Invalid API key'})
+
+
 @app.route('/api/health', methods=['GET'])
 def health_check():
     """Health check endpoint"""
