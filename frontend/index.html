@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OCR Chat Extractor - Gemini AI</title>
+    <link rel="stylesheet" href="static/css/style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Header -->
+        <header class="header-compact">
+            <div class="header-content">
+                <div class="logo">
+                    <i class="fas fa-robot"></i>
+                    <h1>OCR Chat Extractor</h1>
+                </div>
+                <div class="rate-limit-mini">
+                    <i class="fas fa-chart-line"></i>
+                    <span id="rateLimitValue">10/10</span>
+                    <button class="btn-refresh" id="btnRefresh" title="Refresh status">
+                        <i class="fas fa-sync-alt"></i>
+                    </button>
+                </div>
+            </div>
+        </header>
+
+        <!-- Main Content -->
+        <main class="main-grid">
+            <!-- Left Panel: Upload Section -->
+            <section class="panel upload-panel">
+                <div class="panel-header">
+                    <i class="fas fa-cloud-upload-alt"></i>
+                    <h2>Upload & OCR</h2>
+                </div>
+                
+                <div class="panel-content">
+                    <div class="upload-area" id="uploadArea">
+                        <input type="file" id="fileInput" accept="image/*" multiple hidden>
+                        <div class="upload-placeholder" id="uploadPlaceholder">
+                            <i class="fas fa-images"></i>
+                            <p>Klik atau drag & drop gambar</p>
+                            <span class="upload-hint">Mendukung multiple files (Max 16MB/file)</span>
+                        </div>
+                        <div class="files-preview" id="filesPreview" style="display: none;">
+                            <div class="files-list" id="filesList"></div>
+                            <button class="btn-clear-all" id="btnClearAll">
+                                <i class="fas fa-trash"></i>
+                                Hapus Semua
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="dateInput">
+                            <i class="fas fa-calendar-alt"></i>
+                            Tanggal
+                        </label>
+                        <input type="date" id="dateInput" class="input-field">
+                    </div>
+
+                    <button class="btn btn-primary" id="btnProcess" disabled>
+                        <i class="fas fa-magic"></i>
+                        <span id="btnProcessText">Proses OCR</span>
+                    </button>
+
+                    <!-- Progress Section for Bulk Upload -->
+                    <div class="bulk-progress" id="bulkProgress" style="display: none;">
+                        <div class="progress-header">
+                            <span id="progressText">Memproses 0/0</span>
+                            <span id="progressPercent">0%</span>
+                        </div>
+                        <div class="progress-bar">
+                            <div class="progress-fill" id="progressFill"></div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Right Panel: Data Table -->
+            <section class="panel table-panel">
+                <div class="panel-header">
+                    <i class="fas fa-table"></i>
+                    <h2>Data Tersimpan</h2>
+                    <button class="btn-refresh" id="btnRefreshTable" title="Refresh data">
+                        <i class="fas fa-sync-alt"></i>
+                    </button>
+                </div>
+                
+                <div class="table-container">
+                    <table class="data-table" id="dataTable">
+                        <thead>
+                            <tr>
+                                <th>Tanggal</th>
+                                <th>Nomor</th>
+                                <th>Pesan</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tableBody">
+                            <tr class="empty-row">
+                                <td colspan="3">
+                                    <i class="fas fa-inbox"></i>
+                                    <p>Belum ada data</p>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+        </main>
+
+        <!-- Loading Overlay -->
+        <div class="loading-overlay" id="loadingOverlay" style="display: none;">
+            <div class="loading-spinner">
+                <div class="spinner"></div>
+                <p>Memproses gambar dengan AI...</p>
+            </div>
+        </div>
+
+        <!-- Notification -->
+        <div class="notification" id="notification"></div>
+
+        <!-- Hidden elements for compatibility -->
+        <div id="jsonOutput" style="display: none;"></div>
+        <div id="rateLimitProgress" style="display: none;"></div>
+        <div id="rateLimitReset" style="display: none;"></div>
+    </div>
+
+    <script src="static/js/app.js"></script>
+</body>
+</html>
