@@ -142,6 +142,86 @@ PENTING: Hanya kembalikan JSON array, tanpa markdown atau teks tambahan."""
         return jsonify({'error': 'Processing failed. Please try again.'}), 500
 
 
+@app.route('/api/ocr', methods=['POST'])
+@rate_limit
+def ocr_single_image():
+    """Process single image with OCR - compatible with frontend"""
+    api_key = request.headers.get('X-API-Key')
+    if not api_key:
+        return jsonify({'error': 'API key is required'}), 401
+    
+    if 'image' not in request.files:
+        return jsonify({'error': 'No image provided'}), 400
+    
+    image = request.files['image']
+    if image.filename == '':
+        return jsonify({'error': 'No image selected'}), 400
+    
+    if not allowed_file(image.filename):
+        return jsonify({'error': f'File type not allowed: {image.filename}'}), 400
+    
+    tanggal = request.form.get('tanggal', '')
+    
+    try:
+        # Configure Gemini API
+        genai.configure(api_key=api_key)
+        model = genai.GenerativeModel('gemini-2.0-flash')
+        
+        # Read image
+        img_bytes = image.read()
+        img = Image.open(io.BytesIO(img_bytes))
+        
+        # Process with Gemini
+        prompt = """Analisis gambar chat ini dan ekstrak percakapan.
+Ekstrak informasi berikut:
+1. Isi pesan/chat yang terlihat (gabungkan semua pesan menjadi satu teks)
+2. Nomor telepon jika ada (format: 08xxx atau +62xxx)
+
+Format output sebagai JSON dengan struktur:
+{
+  "pesan": "isi semua pesan yang terlihat",
+  "nomor": "nomor telepon jika ada, kosong jika tidak ada"
+}
+
+PENTING: Hanya kembalikan JSON object, tanpa markdown atau teks tambahan."""
+        
+        response = model.generate_content([prompt, img])
+        
+        # Parse response
+        response_text = response.text.strip()
+        if response_text.startswith('```'):
+            response_text = response_text.split('\n', 1)[1] if '\n' in response_text else response_text[3:]
+            if response_text.endswith('```'):
+                response_text = response_text[:-3]
+            response_text = response_text.strip()
+        
+        try:
+            data = json.loads(response_text)
+            result_data = {
+                'pesan': data.get('pesan', ''),
+                'nomor': data.get('nomor', ''),
+                'tanggal': tanggal
+            }
+            return jsonify({
+                'success': True,
+                'data': result_data
+            })
+        except json.JSONDecodeError:
+            return jsonify({
+                'success': True,
+                'data': {
+                    'pesan': response_text,
+                    'nomor': '',
+                    'tanggal': tanggal
+                }
+            })
+    except Exception as e:
+        error_message = str(e)
+        if 'API key' in error_message.lower() or 'API_KEY_INVALID' in error_message:
+            return jsonify({'error': 'Invalid API key'}), 401
+        return jsonify({'error': 'Gagal memproses gambar. Coba lagi.', 'message': str(e)}), 500
+
+
 @app.route('/api/validate-key', methods=['POST'])
 def validate_key():
     """Validate Gemini API key"""

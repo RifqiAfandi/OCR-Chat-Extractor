@@ -221,7 +221,7 @@ body {
 }
 
 .files-list {
-    max-height: 180px;
+    max-height: 135px;
     overflow-y: auto;
     margin-bottom: 10px;
 }
