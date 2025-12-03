@@ -9,11 +9,13 @@ Website untuk melakukan OCR (Optical Character Recognition) pada gambar mengguna
 - ✅ Ekstraksi otomatis: Isi chat, Nomor telepon, Tanggal
 - ✅ Input tanggal manual (opsional)
 - ✅ Rate limiting (10 permintaan per jam)
-- ✅ Notifikasi real-time untuk status rate limit
-- ✅ Output dalam format JSON
 - ✅ Dark theme dengan UI modern
-- ✅ Copy to clipboard untuk hasil
+- ✅ Data disimpan di localStorage browser
+- ✅ Export data ke CSV
+- ✅ Hapus data per item atau semua data
+- ✅ API key per pengguna (tanpa file .env)
 - ✅ Responsive design
+- ✅ Security hardening (console protection, session management)
 
 ## 🛠️ Teknologi
 
@@ -28,18 +30,20 @@ Website untuk melakukan OCR (Optical Character Recognition) pada gambar mengguna
 - CSS3 (Modern Design)
 - Vanilla JavaScript
 - Font Awesome Icons
+- localStorage untuk penyimpanan data
 
 ## 📋 Prasyarat
 
 - Python 3.8 atau lebih tinggi
 - API Key Gemini AI (gratis dari [Google AI Studio](https://makersuite.google.com/app/apikey))
 
-## 🚀 Instalasi
+## 🚀 Instalasi (Local Development)
 
-### 1. Clone atau Download Repository
+### 1. Clone Repository
 
 ```bash
-cd Utils
+git clone https://github.com/RifqiAfandi/OCR-Chat-Extractor.git
+cd OCR-Chat-Extractor
 ```
 
 ### 2. Install Dependencies
@@ -48,27 +52,7 @@ cd Utils
 pip install -r requirements.txt
 ```
 
-### 3. Konfigurasi API Key
-
-Buat file `.env` di root folder:
-
-```bash
-copy .env.example .env
-```
-
-Edit file `.env` dan tambahkan API key Gemini Anda:
-
-```
-GEMINI_API_KEY=AIzaSy...your_actual_api_key_here
-```
-
-**Cara mendapatkan API Key:**
-1. Kunjungi [Google AI Studio](https://makersuite.google.com/app/apikey)
-2. Login dengan akun Google
-3. Klik "Create API Key"
-4. Copy API key yang dihasilkan
-
-### 4. Jalankan Aplikasi
+### 3. Jalankan Aplikasi
 
 ```bash
 cd backend
@@ -77,12 +61,102 @@ python app.py
 
 Server akan berjalan di: `http://localhost:5000`
 
-### 5. Buka Browser
+### 4. Buka Browser dan Masukkan API Key
 
-Akses aplikasi melalui browser:
+Akses `http://localhost:5000`
+
+Saat pertama kali dibuka, Anda akan diminta memasukkan Gemini API Key:
+
+**Cara mendapatkan API Key:**
+1. Kunjungi [Google AI Studio](https://makersuite.google.com/app/apikey)
+2. Login dengan akun Google
+3. Klik "Create API Key"
+4. Copy API key yang dihasilkan
+5. Paste di form yang muncul di website
+
+## 🌐 Deploy ke Vercel
+
+### Prasyarat Deploy
+- Akun [Vercel](https://vercel.com) (gratis)
+- Repository sudah di-push ke GitHub
+
+### Langkah-langkah Deploy
+
+#### 1. Siapkan File Konfigurasi Vercel
+
+Buat file `vercel.json` di root folder:
+
+```json
+{
+  "version": 2,
+  "builds": [
+    {
+      "src": "backend/app.py",
+      "use": "@vercel/python"
+    }
+  ],
+  "routes": [
+    {
+      "src": "/static/(.*)",
+      "dest": "backend/app.py"
+    },
+    {
+      "src": "/(.*)",
+      "dest": "backend/app.py"
+    }
+  ]
+}
 ```
-http://localhost:5000
+
+#### 2. Update `requirements.txt`
+
+Pastikan `requirements.txt` berisi:
 ```
+flask
+flask-cors
+google-generativeai
+Pillow
+gunicorn
+```
+
+#### 3. Deploy via Vercel Dashboard
+
+1. Login ke [Vercel](https://vercel.com)
+2. Klik **"Add New..."** → **"Project"**
+3. Import repository `OCR-Chat-Extractor` dari GitHub
+4. Konfigurasi:
+   - **Framework Preset**: Other
+   - **Root Directory**: `./` (default)
+   - **Build Command**: (kosongkan)
+   - **Output Directory**: (kosongkan)
+5. Klik **"Deploy"**
+
+#### 4. Deploy via Vercel CLI (Alternatif)
+
+```bash
+# Install Vercel CLI
+npm install -g vercel
+
+# Login
+vercel login
+
+# Deploy
+vercel
+
+# Deploy ke production
+vercel --prod
+```
+
+### Catatan Penting untuk Vercel
+
+⚠️ **Limitasi Vercel Free Tier:**
+- Serverless function timeout: 10 detik (mungkin tidak cukup untuk OCR gambar besar)
+- Memory limit: 1024MB
+- Tidak ada persistent storage (uploads folder tidak disimpan)
+
+💡 **Tips:**
+- Untuk produksi serius, pertimbangkan menggunakan platform seperti Railway, Render, atau VPS
+- API key dimasukkan per pengguna, jadi tidak perlu environment variable di Vercel
 
 ## 📖 Cara Penggunaan
 
@@ -99,23 +173,16 @@ http://localhost:5000
    - Klik tombol "Proses OCR"
    - Tunggu beberapa saat hingga selesai
 
-4. **Lihat Hasil**
-   - Hasil akan ditampilkan dalam format:
-     - Isi Chat
-     - Nomor Telepon
-     - Tanggal
-     - JSON Output
-   - Gunakan tombol copy untuk menyalin hasil
-
-5. **Rate Limit**
-   - Aplikasi membatasi 10 permintaan per jam per IP
-   - Status rate limit ditampilkan di bagian atas
-   - Notifikasi otomatis jika melebihi batas
+4. **Lihat & Kelola Hasil**
+   - Hasil ditampilkan dalam tabel dengan kolom: Pesan, Nomor, Tanggal
+   - Klik teks pesan untuk expand/collapse
+   - Hapus data per item atau semua data sekaligus
+   - Export ke CSV untuk backup
 
 ## 📁 Struktur Project
 
 ```
-Utils/
+OCR-Chat-Extractor/
 ├── backend/
 │   ├── app.py              # Flask backend server
 │   └── uploads/            # Temporary upload folder
@@ -125,12 +192,25 @@ Utils/
 │       ├── css/
 │       │   └── style.css   # Styling (dark theme)
 │       └── js/
-│           └── app.js      # Frontend logic
+│           ├── app.js      # Frontend logic
+│           └── security.js # Security module
 ├── requirements.txt        # Python dependencies
-├── .env.example           # Environment template
+├── vercel.json            # Vercel configuration
 ├── .gitignore             # Git ignore file
 └── README.md              # Documentation
 ```
+
+## 🔐 Security Features
+
+Aplikasi ini dilengkapi dengan berbagai fitur keamanan:
+
+- **Console Protection**: Console log dinonaktifkan di production mode
+- **API Key Obfuscation**: API key di-encode dan disimpan di sessionStorage
+- **Session Management**: Auto-logout setelah 15 menit inaktivitas
+- **Rate Limiting**: Maksimal 5 percobaan validasi API key per menit
+- **Input Sanitization**: Validasi dan sanitasi semua input
+- **Security Headers**: X-Content-Type-Options, X-Frame-Options, X-XSS-Protection
+- **Memory Cleanup**: Data sensitif dibersihkan saat halaman ditutup
 
 ## 🎨 Design Features
 
@@ -142,10 +222,10 @@ Utils/
 
 ## 🐛 Troubleshooting
 
-**Error: "GEMINI_API_KEY belum dikonfigurasi"**
-- Pastikan file `.env` sudah dibuat
-- Periksa API key sudah benar
-- Restart server setelah menambahkan API key
+**Error: "API key tidak valid"**
+- Pastikan API key sudah benar (copy dari Google AI Studio)
+- Cek apakah API key masih aktif
+- Pastikan tidak ada spasi di awal/akhir API key
 
 **Error: "Failed to connect to server"**
 - Pastikan backend sudah berjalan di port 5000
@@ -153,20 +233,18 @@ Utils/
 - Cek konsol browser untuk error detail
 
 **Rate Limit Exceeded**
-- Tunggu hingga periode reset (ditampilkan di UI)
-- Atau restart server untuk reset counter
+- Tunggu hingga periode reset (1 jam)
+- Rate limit adalah 10 permintaan per jam per IP
 
 **Image Upload Failed**
 - Periksa ukuran file tidak melebihi 16MB
 - Pastikan format file didukung
 - Coba compress gambar terlebih dahulu
 
-## 🔐 Security Notes
-
-- API key disimpan di `.env` (tidak di-commit ke git)
-- Rate limiting mencegah abuse
-- File upload divalidasi (type & size)
-- Temporary files dibersihkan setelah proses
+**Data tidak muncul di tabel**
+- Refresh halaman
+- Cek localStorage di DevTools → Application → Local Storage
+- Pastikan browser mendukung localStorage
 
 ## 📜 License
 
@@ -184,4 +262,7 @@ Dibuat dengan ❤️ menggunakan Python, Flask, dan Gemini AI
 
 ---
 
-**Catatan:** Pastikan menggunakan API key Gemini AI dengan bijak dan tidak membagikannya secara publik.
+**Catatan:** 
+- API key disimpan di browser Anda (sessionStorage), bukan di server
+- Jangan bagikan API key Anda secara publik
+- Data OCR tersimpan di localStorage browser Anda

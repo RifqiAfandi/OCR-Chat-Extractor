@@ -3,11 +3,44 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>OCR Chat Extractor - Gemini AI</title>
+    <meta http-equiv="X-Content-Type-Options" content="nosniff">
+    <meta http-equiv="X-Frame-Options" content="DENY">
+    <meta http-equiv="X-XSS-Protection" content="1; mode=block">
+    <meta name="referrer" content="strict-origin-when-cross-origin">
+    <title>OCR Chat Extractor</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🤖</text></svg>">
     <link rel="stylesheet" href="static/css/style.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 </head>
 <body>
+    <!-- API Key Modal -->
+    <div class="modal-overlay" id="apiKeyModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <i class="fas fa-key"></i>
+                <h2>Masukkan Gemini API Key</h2>
+            </div>
+            <div class="modal-body">
+                <p>Untuk menggunakan aplikasi ini, Anda perlu memasukkan Gemini API Key Anda sendiri.</p>
+                <p class="hint">Dapatkan API key gratis di <a href="https://makersuite.google.com/app/apikey" target="_blank">Google AI Studio</a></p>
+                <div class="form-group">
+                    <label for="apiKeyInput">
+                        <i class="fas fa-key"></i>
+                        API Key
+                    </label>
+                    <input type="password" id="apiKeyInput" class="input-field" placeholder="Masukkan Gemini API Key...">
+                </div>
+                <div class="api-key-error" id="apiKeyError" style="display: none;"></div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-primary" id="btnSaveApiKey">
+                    <i class="fas fa-check"></i>
+                    <span>Simpan & Lanjutkan</span>
+                </button>
+            </div>
+        </div>
+    </div>
+
     <div class="app-container">
         <!-- Header -->
         <header class="header-compact">
@@ -16,11 +49,9 @@
                     <i class="fas fa-robot"></i>
                     <h1>OCR Chat Extractor</h1>
                 </div>
-                <div class="rate-limit-mini">
-                    <i class="fas fa-chart-line"></i>
-                    <span id="rateLimitValue">10/10</span>
-                    <button class="btn-refresh" id="btnRefresh" title="Refresh status">
-                        <i class="fas fa-sync-alt"></i>
+                <div class="header-actions">
+                    <button class="btn-icon" id="btnChangeApiKey" title="Ubah API Key">
+                        <i class="fas fa-key"></i>
                     </button>
                 </div>
             </div>
@@ -65,6 +96,11 @@
                         <span id="btnProcessText">Proses OCR</span>
                     </button>
 
+                    <button class="btn btn-danger" id="btnDeleteAll" disabled>
+                        <i class="fas fa-trash-alt"></i>
+                        <span>Hapus Semua Data</span>
+                    </button>
+
                     <!-- Progress Section for Bulk Upload -->
                     <div class="bulk-progress" id="bulkProgress" style="display: none;">
                         <div class="progress-header">
@@ -83,23 +119,30 @@
                 <div class="panel-header">
                     <i class="fas fa-table"></i>
                     <h2>Data Tersimpan</h2>
-                    <button class="btn-refresh" id="btnRefreshTable" title="Refresh data">
-                        <i class="fas fa-sync-alt"></i>
-                    </button>
+                    <div class="panel-actions">
+                        <button class="btn-action" id="btnExport" title="Export ke CSV" disabled>
+                            <i class="fas fa-file-export"></i>
+                            Export CSV
+                        </button>
+                        <button class="btn-refresh" id="btnRefreshTable" title="Refresh data">
+                            <i class="fas fa-sync-alt"></i>
+                        </button>
+                    </div>
                 </div>
                 
                 <div class="table-container">
                     <table class="data-table" id="dataTable">
                         <thead>
                             <tr>
-                                <th>Tanggal</th>
-                                <th>Nomor</th>
                                 <th>Pesan</th>
+                                <th>Nomor</th>
+                                <th>Tanggal</th>
+                                <th>Aksi</th>
                             </tr>
                         </thead>
                         <tbody id="tableBody">
                             <tr class="empty-row">
-                                <td colspan="3">
+                                <td colspan="4">
                                     <i class="fas fa-inbox"></i>
                                     <p>Belum ada data</p>
                                 </td>
@@ -123,10 +166,13 @@
 
         <!-- Hidden elements for compatibility -->
         <div id="jsonOutput" style="display: none;"></div>
+        <div id="rateLimitValue" style="display: none;"></div>
         <div id="rateLimitProgress" style="display: none;"></div>
         <div id="rateLimitReset" style="display: none;"></div>
+        <button id="btnRefresh" style="display: none;"></button>
     </div>
 
+    <script src="static/js/security.js"></script>
     <script src="static/js/app.js"></script>
 </body>
 </html>

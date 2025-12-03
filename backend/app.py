@@ -1,7 +1,6 @@
 import os
 import io
 import json
-import csv
 from datetime import datetime, timedelta
 from flask import Flask, request, jsonify, send_from_directory
 from flask_cors import CORS
@@ -10,14 +9,11 @@ import google.generativeai as genai
 from PIL import Image
 from collections import defaultdict
 from functools import wraps
-from dotenv import load_dotenv
 
 # Get absolute paths
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 ROOT_DIR = os.path.join(BASE_DIR, '..')
 
-# Load environment variables from root folder
-load_dotenv(os.path.join(ROOT_DIR, '.env'))
 FRONTEND_DIR = os.path.join(BASE_DIR, '..', 'frontend')
 STATIC_DIR = os.path.join(FRONTEND_DIR, 'static')
 
@@ -37,50 +33,8 @@ RATE_LIMIT = 10  # Maximum requests per time window
 RATE_LIMIT_WINDOW = timedelta(hours=1)  # Time window
 request_tracker = defaultdict(list)
 
-# Konfigurasi Gemini AI
-GEMINI_API_KEY = os.getenv('GEMINI_API_KEY', '')
-print(f"[DEBUG] API Key loaded: {'Yes' if GEMINI_API_KEY else 'No'}")
-if GEMINI_API_KEY:
-    genai.configure(api_key=GEMINI_API_KEY)
-else:
-    print("[WARNING] GEMINI_API_KEY not found in .env file!")
-
 # Buat folder upload jika belum ada
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
-
-# CSV file path for storing OCR results
-CSV_FILE_PATH = os.path.join(BASE_DIR, 'ocr_results.csv')
-
-
-def init_csv_file():
-    """Initialize CSV file with headers if it doesn't exist"""
-    if not os.path.exists(CSV_FILE_PATH):
-        with open(CSV_FILE_PATH, 'w', newline='', encoding='utf-8') as f:
-            writer = csv.writer(f)
-            writer.writerow(['tanggal', 'nomor', 'pesan'])
-
-
-def save_to_csv(tanggal, nomor, pesan):
-    """Save OCR result to CSV file"""
-    init_csv_file()
-    with open(CSV_FILE_PATH, 'a', newline='', encoding='utf-8') as f:
-        writer = csv.writer(f)
-        writer.writerow([tanggal or '', nomor or '', pesan or ''])
-
-
-def get_all_csv_data():
-    """Get all data from CSV file"""
-    init_csv_file()
-    data = []
-    with open(CSV_FILE_PATH, 'r', encoding='utf-8') as f:
-        reader = csv.DictReader(f)
-        for row in reader:
-            data.append(row)
-    return data
-
-
-# Initialize CSV file
-init_csv_file()
 
 
 def allowed_file(filename):
@@ -140,24 +94,22 @@ def rate_limit_required(f):
     return decorated_function
 
 
-def process_ocr_with_gemini(image_path, custom_date=None):
+def process_ocr_with_gemini(image_path, api_key, custom_date=None):
     """Process image with Gemini AI for OCR"""
     try:
-        print(f"[DEBUG] Processing image: {image_path}")
-        
-        if not GEMINI_API_KEY:
-            print("[ERROR] API key not configured!")
+        if not api_key:
             return {
-                'error': 'API key not configured',
-                'message': 'Gemini API key belum dikonfigurasi. Silakan tambahkan GEMINI_API_KEY di file .env'
+                'error': 'API key not provided',
+                'message': 'Gemini API key belum dimasukkan. Silakan masukkan API key Anda.'
             }
         
+        # Configure Gemini with provided API key
+        genai.configure(api_key=api_key)
+        
         # Load image
-        print("[DEBUG] Loading image...")
         img = Image.open(image_path)
         
         # Initialize Gemini model - using gemini-2.0-flash which is widely available
-        print("[DEBUG] Initializing Gemini model...")
         model = genai.GenerativeModel('gemini-2.0-flash')
         
         # Prompt untuk ekstraksi data
@@ -178,13 +130,10 @@ def process_ocr_with_gemini(image_path, custom_date=None):
         """
         
         # Generate content
-        print("[DEBUG] Sending request to Gemini API...")
         response = model.generate_content([prompt, img])
-        print("[DEBUG] Response received from Gemini API")
         
         # Parse response
         response_text = response.text.strip()
-        print(f"[DEBUG] Response text: {response_text[:200]}...")
         
         # Try to extract JSON from response
         if '```json' in response_text:
@@ -209,16 +158,21 @@ def process_ocr_with_gemini(image_path, custom_date=None):
         if custom_date:
             result['tanggal'] = custom_date
         
-        print(f"[DEBUG] OCR result: {result}")
         return result
         
     except Exception as e:
-        import traceback
-        print(f"[ERROR] Processing failed: {str(e)}")
-        print(f"[ERROR] Traceback: {traceback.format_exc()}")
+        # Check for API key errors - sanitize message for security
+        error_message = str(e).lower()
+        if 'api key' in error_message or 'invalid' in error_message or 'unauthorized' in error_message:
+            return {
+                'error': 'Invalid API key',
+                'message': 'API key tidak valid. Silakan periksa kembali API key Anda.'
+            }
+        
+        # Return generic error message to avoid exposing internal details
         return {
             'error': 'Processing failed',
-            'message': str(e)
+            'message': 'Gagal memproses gambar. Silakan coba lagi.'
         }
 
 
@@ -248,6 +202,14 @@ def ocr_endpoint():
             'message': f'Tipe file tidak diizinkan. Gunakan: {", ".join(ALLOWED_EXTENSIONS)}'
         }), 400
     
+    # Get API key from request header
+    api_key = request.headers.get('X-API-Key', '')
+    if not api_key:
+        return jsonify({
+            'error': 'API key required',
+            'message': 'Gemini API key diperlukan. Silakan masukkan API key Anda.'
+        }), 401
+    
     # Get custom date if provided
     custom_date = request.form.get('tanggal', None)
     
@@ -260,7 +222,7 @@ def ocr_endpoint():
         file.save(filepath)
         
         # Process with Gemini
-        result = process_ocr_with_gemini(filepath, custom_date)
+        result = process_ocr_with_gemini(filepath, api_key, custom_date)
         
         # Clean up temporary file
         try:
@@ -270,14 +232,6 @@ def ocr_endpoint():
         
         if 'error' in result:
             return jsonify(result), 500
-        
-        # Save to CSV
-        save_to_csv(
-            result.get('tanggal'),
-            result.get('nomor_telepon'),
-            result.get('isi_chat')
-        )
-        print(f"[DEBUG] Saved to CSV: {result}")
         
         # Get remaining requests
         client_id = request.remote_addr
@@ -300,19 +254,47 @@ def ocr_endpoint():
         }), 500
 
 
-@app.route('/api/data', methods=['GET'])
-def get_data():
-    """Get all saved OCR data from CSV"""
+@app.route('/api/validate-key', methods=['POST'])
+def validate_api_key():
+    """Validate Gemini API key"""
     try:
-        data = get_all_csv_data()
-        return jsonify({
-            'success': True,
-            'data': data
-        }), 200
+        data = request.get_json()
+        api_key = data.get('api_key', '')
+        
+        if not api_key:
+            return jsonify({
+                'valid': False,
+                'message': 'API key tidak boleh kosong'
+            }), 400
+        
+        # Try to configure and make a simple request to validate
+        genai.configure(api_key=api_key)
+        model = genai.GenerativeModel('gemini-2.0-flash')
+        
+        # Simple validation request
+        response = model.generate_content("Say 'valid' if you can receive this message.")
+        
+        if response and response.text:
+            return jsonify({
+                'valid': True,
+                'message': 'API key valid!'
+            }), 200
+        else:
+            return jsonify({
+                'valid': False,
+                'message': 'API key tidak dapat divalidasi'
+            }), 400
+            
     except Exception as e:
+        error_message = str(e).lower()
+        if 'api key' in error_message or 'invalid' in error_message or 'unauthorized' in error_message:
+            return jsonify({
+                'valid': False,
+                'message': 'API key tidak valid'
+            }), 400
         return jsonify({
-            'error': 'Failed to read data',
-            'message': str(e)
+            'valid': False,
+            'message': f'Gagal memvalidasi API key: {str(e)}'
         }), 500
 
 
@@ -361,12 +343,8 @@ if __name__ == '__main__':
     print("=" * 60)
     print("OCR Web Application dengan Gemini AI")
     print("=" * 60)
-    if not GEMINI_API_KEY:
-        print("⚠️  WARNING: GEMINI_API_KEY belum dikonfigurasi!")
-        print("   Silakan buat file .env dan tambahkan:")
-        print("   GEMINI_API_KEY=your_api_key_here")
-    else:
-        print("✓ Gemini API Key terkonfigurasi")
+    print("✓ Pengguna akan memasukkan API key mereka sendiri")
     print(f"✓ Rate limit: {RATE_LIMIT} requests per jam")
+    print("✓ Data disimpan di localStorage browser")
     print("=" * 60)
     app.run(debug=True, host='0.0.0.0', port=5000)

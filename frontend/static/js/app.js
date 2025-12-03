@@ -1,13 +1,32 @@
+/**
+ * OCR Chat Extractor - Main Application
+ * SECURITY HARDENED VERSION
+ * 
+ * This file works in conjunction with security.js
+ * All sensitive operations are delegated to the Security module
+ */
+
+'use strict';
+
 // API Configuration
 const API_BASE_URL = 'http://localhost:5000';
+const STORAGE_KEY = 'ocr_chat_data';
 
 // State Management
 let currentFiles = [];
-let rateLimitInterval = null;
 let isProcessing = false;
+let ocrData = [];
 
 // DOM Elements
 const elements = {
+    // API Key Modal
+    apiKeyModal: document.getElementById('apiKeyModal'),
+    apiKeyInput: document.getElementById('apiKeyInput'),
+    apiKeyError: document.getElementById('apiKeyError'),
+    btnSaveApiKey: document.getElementById('btnSaveApiKey'),
+    btnChangeApiKey: document.getElementById('btnChangeApiKey'),
+    
+    // Upload elements
     uploadArea: document.getElementById('uploadArea'),
     uploadPlaceholder: document.getElementById('uploadPlaceholder'),
     filesPreview: document.getElementById('filesPreview'),
@@ -28,17 +47,134 @@ const elements = {
     bulkProgress: document.getElementById('bulkProgress'),
     progressText: document.getElementById('progressText'),
     progressPercent: document.getElementById('progressPercent'),
-    progressFill: document.getElementById('progressFill')
+    progressFill: document.getElementById('progressFill'),
+    
+    // New elements
+    btnDeleteAll: document.getElementById('btnDeleteAll'),
+    btnExport: document.getElementById('btnExport')
 };
 
 // Initialize
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', function() {
     initializeEventListeners();
     setTodayDate();
-    updateRateLimitStatus();
-    startRateLimitMonitoring();
-    loadTableData();
+    loadDataFromLocalStorage();
+    
+    // Wait for security module to initialize
+    setTimeout(function() {
+        checkApiKey();
+    }, 100);
 });
+
+// Check if API key exists (uses Security module)
+function checkApiKey() {
+    if (typeof Security !== 'undefined' && Security.hasApiKey()) {
+        hideApiKeyModal();
+    } else {
+        showApiKeyModal();
+    }
+}
+
+// Show API Key Modal
+function showApiKeyModal() {
+    if (elements.apiKeyModal) {
+        elements.apiKeyModal.classList.add('show');
+        
+        // Clear input for security
+        if (elements.apiKeyInput) {
+            elements.apiKeyInput.value = '';
+        }
+    }
+}
+
+// Hide API Key Modal
+function hideApiKeyModal() {
+    if (elements.apiKeyModal) {
+        elements.apiKeyModal.classList.remove('show');
+    }
+    if (elements.apiKeyError) {
+        elements.apiKeyError.style.display = 'none';
+    }
+    
+    // Clear input for security
+    if (elements.apiKeyInput) {
+        elements.apiKeyInput.value = '';
+        elements.apiKeyInput.blur();
+    }
+}
+
+// Get API Key (secured via Security module)
+function getApiKey() {
+    if (typeof Security !== 'undefined') {
+        return Security.getApiKey() || '';
+    }
+    return '';
+}
+
+// Validate and Save API Key
+async function validateAndSaveApiKey() {
+    const apiKeyValue = elements.apiKeyInput ? elements.apiKeyInput.value.trim() : '';
+    
+    if (!apiKeyValue) {
+        showApiKeyError('API key tidak boleh kosong');
+        return;
+    }
+    
+    // Check rate limiting
+    if (typeof Security !== 'undefined' && !Security.canAttempt()) {
+        const status = Security.getStatus();
+        const minutes = Math.ceil(status.lockoutRemaining / 60000);
+        showApiKeyError('Terlalu banyak percobaan. Coba lagi dalam ' + minutes + ' menit.');
+        return;
+    }
+    
+    elements.btnSaveApiKey.disabled = true;
+    elements.btnSaveApiKey.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Memvalidasi...';
+    
+    try {
+        const response = await fetch(API_BASE_URL + '/api/validate-key', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ api_key: apiKeyValue })
+        });
+        
+        const result = await response.json();
+        
+        if (result.valid) {
+            // Use Security module to store the key securely
+            if (typeof Security !== 'undefined') {
+                Security.setApiKey(apiKeyValue);
+            }
+            
+            // Clear input immediately after saving
+            if (elements.apiKeyInput) {
+                elements.apiKeyInput.value = '';
+            }
+            
+            hideApiKeyModal();
+            showNotification('API key berhasil disimpan!', 'success');
+        } else {
+            // Record failed attempt
+            if (typeof Security !== 'undefined') {
+                Security.recordAttempt();
+            }
+            showApiKeyError(result.message || 'API key tidak valid');
+        }
+    } catch (e) {
+        showApiKeyError('Gagal memvalidasi API key. Pastikan server berjalan.');
+    } finally {
+        elements.btnSaveApiKey.disabled = false;
+        elements.btnSaveApiKey.innerHTML = '<i class="fas fa-check"></i> <span>Simpan & Lanjutkan</span>';
+    }
+}
+
+// Show API Key Error
+function showApiKeyError(message) {
+    elements.apiKeyError.textContent = message;
+    elements.apiKeyError.style.display = 'block';
+}
 
 // Set today's date as default
 function setTodayDate() {
@@ -51,6 +187,15 @@ function setTodayDate() {
 
 // Event Listeners
 function initializeEventListeners() {
+    // API Key Modal
+    elements.btnSaveApiKey.addEventListener('click', validateAndSaveApiKey);
+    elements.apiKeyInput.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') validateAndSaveApiKey();
+    });
+    elements.btnChangeApiKey.addEventListener('click', () => {
+        showApiKeyModal();
+    });
+    
     // Upload area click
     elements.uploadPlaceholder.addEventListener('click', () => {
         elements.fileInput.click();
@@ -72,13 +217,28 @@ function initializeEventListeners() {
     // Process button
     elements.btnProcess.addEventListener('click', processImages);
 
-    // Refresh rate limit
-    elements.btnRefresh.addEventListener('click', updateRateLimitStatus);
-
     // Refresh table
     if (elements.btnRefreshTable) {
-        elements.btnRefreshTable.addEventListener('click', loadTableData);
+        elements.btnRefreshTable.addEventListener('click', loadDataFromLocalStorage);
     }
+    
+    // Delete all button
+    if (elements.btnDeleteAll) {
+        elements.btnDeleteAll.addEventListener('click', deleteAllData);
+    }
+    
+    // Export button
+    if (elements.btnExport) {
+        elements.btnExport.addEventListener('click', exportToCSV);
+    }
+    
+    // Table cell accordion click handler (delegated)
+    document.addEventListener('click', (e) => {
+        if (e.target.classList.contains('cell-text') || e.target.closest('.cell-text')) {
+            const cellText = e.target.classList.contains('cell-text') ? e.target : e.target.closest('.cell-text');
+            cellText.classList.toggle('expanded');
+        }
+    });
 }
 
 // File Handling - Multiple Files
@@ -180,6 +340,12 @@ async function processImages() {
         showNotification('Silakan pilih gambar terlebih dahulu', 'warning');
         return;
     }
+    
+    const apiKey = getApiKey();
+    if (!apiKey) {
+        showApiKeyModal();
+        return;
+    }
 
     if (isProcessing) return;
     isProcessing = true;
@@ -210,8 +376,11 @@ async function processImages() {
                 formData.append('tanggal', formattedDate);
             }
 
-            const response = await fetch(`${API_BASE_URL}/api/ocr`, {
+            const response = await fetch(API_BASE_URL + '/api/ocr', {
                 method: 'POST',
+                headers: {
+                    'X-API-Key': apiKey
+                },
                 body: formData
             });
 
@@ -219,14 +388,27 @@ async function processImages() {
 
             if (response.ok) {
                 successCount++;
-                // Add row to table with animation
-                addRowToTable(result.data);
+                // Save to localStorage and get the ID
+                const savedId = saveToLocalStorage(result.data);
+                // Add row to table with the same ID
+                addRowToTable(result.data, savedId);
             } else if (response.status === 429) {
-                showNotification(`Rate limit tercapai. ${successCount}/${totalFiles} berhasil.`, 'warning');
+                showNotification('Limit API tercapai. Coba lagi nanti. (' + successCount + '/' + totalFiles + ' berhasil)', 'warning');
                 break;
+            } else if (response.status === 401) {
+                showNotification('API key tidak valid. Silakan masukkan ulang.', 'error');
+                if (typeof Security !== 'undefined') {
+                    Security.removeApiKey();
+                }
+                showApiKeyModal();
+                break;
+            } else {
+                // Show error from Gemini API
+                const errorMsg = result.message || result.error || 'Gagal memproses gambar';
+                showNotification(file.name + ': ' + errorMsg, 'error');
             }
-        } catch (error) {
-            console.error('Error processing file:', file.name, error);
+        } catch (e) {
+            showNotification('Error: Koneksi ke server gagal', 'error');
         }
 
         processed++;
@@ -236,14 +418,14 @@ async function processImages() {
     // Complete
     isProcessing = false;
     elements.btnProcess.disabled = false;
-    updateRateLimitStatus();
+    updateButtonStates();
 
     if (successCount === totalFiles) {
         showNotification(`Semua ${totalFiles} gambar berhasil diproses!`, 'success');
     } else if (successCount > 0) {
         showNotification(`${successCount}/${totalFiles} gambar berhasil diproses.`, 'warning');
-    } else {
-        showNotification('Gagal memproses gambar', 'error');
+    } else if (totalFiles > 0) {
+        showNotification('Gagal memproses gambar. Periksa API key atau coba lagi.', 'error');
     }
 
     // Clear files after processing
@@ -260,7 +442,7 @@ function updateProgress(current, total) {
 }
 
 // Add single row to table with animation
-function addRowToTable(data) {
+function addRowToTable(data, rowId = null) {
     if (!elements.tableBody) return;
 
     // Remove empty row if exists
@@ -269,13 +451,27 @@ function addRowToTable(data) {
         emptyRow.remove();
     }
 
-    // Create new row
+    // Use provided ID or generate a new one
+    const id = rowId || (Date.now() + Math.random().toString(36).substr(2, 9));
+    const pesanText = data.isi_chat || data.pesan || '-';
+
+    // Create new row with new column order: Pesan | Nomor | Tanggal | Aksi
     const tr = document.createElement('tr');
     tr.className = 'new-row';
+    tr.setAttribute('data-id', id);
     tr.innerHTML = `
+        <td class="cell-pesan">
+            <div class="cell-content">
+                <span class="cell-text" title="Klik untuk expand/collapse">${escapeHtml(pesanText)}</span>
+            </div>
+        </td>
+        <td>${escapeHtml(data.nomor_telepon || data.nomor || '-')}</td>
         <td>${escapeHtml(data.tanggal || '-')}</td>
-        <td>${escapeHtml(data.nomor_telepon || '-')}</td>
-        <td>${escapeHtml(data.isi_chat || '-')}</td>
+        <td>
+            <button class="btn-delete-row" onclick="deleteRow('${id}')" title="Hapus data ini">
+                <i class="fas fa-trash"></i>
+            </button>
+        </td>
     `;
 
     // Insert at top
@@ -285,112 +481,224 @@ function addRowToTable(data) {
     requestAnimationFrame(() => {
         tr.classList.add('row-enter');
     });
+    
+    updateButtonStates();
 }
 
-// Load table data from backend
-async function loadTableData() {
+// LocalStorage Functions
+function saveToLocalStorage(data) {
+    var storedData = [];
     try {
-        const response = await fetch(`${API_BASE_URL}/api/data`);
-        const result = await response.json();
+        storedData = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
+    } catch (e) {
+        storedData = [];
+    }
+    
+    var newItem = {
+        id: String(Date.now()) + Math.random().toString(36).substr(2, 9),
+        pesan: data.isi_chat || '',
+        nomor: data.nomor_telepon || '',
+        tanggal: data.tanggal || '',
+        created_at: new Date().toISOString()
+    };
+    
+    storedData.unshift(newItem); // Add to beginning
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(storedData));
+    ocrData = storedData;
+    
+    return newItem.id;
+}
 
-        if (result.success && result.data) {
-            renderTable(result.data);
+function loadDataFromLocalStorage() {
+    var storedData = [];
+    try {
+        storedData = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
+    } catch (e) {
+        storedData = [];
+    }
+    
+    ocrData = storedData;
+    renderTable(storedData);
+    updateButtonStates();
+}
+
+function deleteFromLocalStorage(id) {
+    const storedData = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
+    const filteredData = storedData.filter(item => item.id !== id);
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(filteredData));
+    ocrData = filteredData;
+}
+
+function clearLocalStorage() {
+    localStorage.removeItem(STORAGE_KEY);
+    ocrData = [];
+}
+
+// Delete single row
+function deleteRow(id) {
+    // Convert id to string for comparison
+    const idStr = String(id);
+    
+    // Find row with matching data-id
+    const rows = elements.tableBody.querySelectorAll('tr[data-id]');
+    rows.forEach(row => {
+        if (row.getAttribute('data-id') === idStr) {
+            row.classList.add('row-exit');
+            setTimeout(() => {
+                row.remove();
+                deleteFromLocalStorage(idStr);
+                updateButtonStates();
+                
+                // Check if table is empty
+                if (elements.tableBody.querySelectorAll('tr:not(.empty-row)').length === 0) {
+                    renderTable([]);
+                }
+            }, 300);
         }
-    } catch (error) {
-        console.error('Error loading table data:', error);
+    });
+}
+
+// Delete from localStorage - ensure string comparison
+function deleteFromLocalStorage(id) {
+    const storedData = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
+    const idStr = String(id);
+    const filteredData = storedData.filter(item => String(item.id) !== idStr);
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(filteredData));
+    ocrData = filteredData;
+}
+
+// Delete all data
+function deleteAllData() {
+    if (!confirm('Apakah Anda yakin ingin menghapus semua data?')) return;
+    
+    clearLocalStorage();
+    renderTable([]);
+    showNotification('Semua data berhasil dihapus', 'success');
+    updateButtonStates();
+}
+
+// Export to CSV
+function exportToCSV() {
+    const storedData = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
+    
+    if (storedData.length === 0) {
+        showNotification('Tidak ada data untuk diexport', 'warning');
+        return;
+    }
+    
+    // Create CSV content with BOM for Excel compatibility
+    const BOM = '\uFEFF';
+    const headers = ['Pesan', 'Nomor', 'Tanggal'];
+    const csvRows = [headers.join(',')];
+    
+    storedData.forEach(item => {
+        const row = [
+            `"${(item.pesan || '').replace(/"/g, '""')}"`,
+            `"${(item.nomor || '').replace(/"/g, '""')}"`,
+            `"${(item.tanggal || '').replace(/"/g, '""')}"`
+        ];
+        csvRows.push(row.join(','));
+    });
+    
+    const csvContent = BOM + csvRows.join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    
+    const today = new Date();
+    const filename = `ocr_export_${today.getFullYear()}${String(today.getMonth() + 1).padStart(2, '0')}${String(today.getDate()).padStart(2, '0')}.csv`;
+    
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', filename);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    
+    showNotification(`Data berhasil diexport ke ${filename}`, 'success');
+}
+
+// Update button states based on data
+function updateButtonStates() {
+    var storedData = [];
+    try {
+        storedData = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
+    } catch (e) {
+        storedData = [];
+    }
+    
+    var hasData = storedData.length > 0;
+    
+    if (elements.btnDeleteAll) {
+        elements.btnDeleteAll.disabled = !hasData;
+    }
+    if (elements.btnExport) {
+        elements.btnExport.disabled = !hasData;
     }
 }
 
 // Render table with data (full reload)
 function renderTable(data) {
-    if (!elements.tableBody) return;
-
-    if (data.length === 0) {
-        elements.tableBody.innerHTML = `
-            <tr class="empty-row">
-                <td colspan="3">
-                    <i class="fas fa-inbox"></i>
-                    <p>Belum ada data</p>
-                </td>
-            </tr>
-        `;
+    if (!elements.tableBody) {
         return;
     }
 
-    // Reverse data to show newest first
-    const reversedData = [...data].reverse();
+    if (data.length === 0) {
+        elements.tableBody.innerHTML = 
+            '<tr class="empty-row">' +
+                '<td colspan="4">' +
+                    '<i class="fas fa-inbox"></i>' +
+                    '<p>Belum ada data</p>' +
+                '</td>' +
+            '</tr>';
+        return;
+    }
 
-    elements.tableBody.innerHTML = reversedData.map(row => `
-        <tr>
-            <td>${escapeHtml(row.tanggal || '-')}</td>
-            <td>${escapeHtml(row.nomor || '-')}</td>
-            <td>${escapeHtml(row.pesan || '-')}</td>
-        </tr>
-    `).join('');
+    // Data already in correct order (newest first from localStorage)
+    elements.tableBody.innerHTML = data.map(function(row) {
+        var pesanText = row.pesan || '-';
+        return '<tr data-id="' + row.id + '">' +
+            '<td class="cell-pesan">' +
+                '<div class="cell-content">' +
+                    '<span class="cell-text" title="Klik untuk expand/collapse">' + escapeHtml(pesanText) + '</span>' +
+                '</div>' +
+            '</td>' +
+            '<td>' + escapeHtml(row.nomor || '-') + '</td>' +
+            '<td>' + escapeHtml(row.tanggal || '-') + '</td>' +
+            '<td>' +
+                '<button class="btn-delete-row" onclick="deleteRow(\'' + row.id + '\')" title="Hapus data ini">' +
+                    '<i class="fas fa-trash"></i>' +
+                '</button>' +
+            '</td>' +
+        '</tr>';
+    }).join('');
 }
 
 // Escape HTML to prevent XSS
 function escapeHtml(text) {
-    const div = document.createElement('div');
-    div.textContent = text;
+    if (text === null || text === undefined) return '';
+    var div = document.createElement('div');
+    div.textContent = String(text);
     return div.innerHTML;
 }
 
-// Rate Limit Management
-async function updateRateLimitStatus() {
-    try {
-        const response = await fetch(`${API_BASE_URL}/api/rate-limit-status`);
-        const data = await response.json();
-
-        // Update UI
-        elements.rateLimitValue.textContent = `${data.remaining}/${data.limit}`;
-        
-        // Update progress bar (if exists)
-        if (elements.rateLimitProgress) {
-            const percentage = (data.remaining / data.limit) * 100;
-            elements.rateLimitProgress.style.width = `${percentage}%`;
-        }
-
-        // Change color based on remaining
-        if (data.remaining > 5) {
-            elements.rateLimitValue.style.color = 'var(--accent-primary)';
-        } else if (data.remaining > 2) {
-            elements.rateLimitValue.style.color = 'var(--accent-warning)';
-        } else {
-            elements.rateLimitValue.style.color = 'var(--accent-error)';
-        }
-
-        // Update reset time (if exists)
-        if (elements.rateLimitReset && data.reset_in_seconds > 0) {
-            const minutes = Math.floor(data.reset_in_seconds / 60);
-            const seconds = data.reset_in_seconds % 60;
-            elements.rateLimitReset.textContent = `Reset dalam: ${minutes}m ${seconds}s`;
-        }
-
-    } catch (error) {
-        console.error('Error fetching rate limit status:', error);
-    }
-}
-
-function startRateLimitMonitoring() {
-    // Update every 10 seconds
-    rateLimitInterval = setInterval(updateRateLimitStatus, 10000);
-}
-
 // Notification System
-function showNotification(message, type = 'success') {
-    elements.notification.textContent = message;
-    elements.notification.className = `notification ${type}`;
+function showNotification(message, type) {
+    type = type || 'success';
+    
+    if (!elements.notification) return;
+    
+    // Sanitize message for display
+    var safeMessage = message;
+    if (typeof Security !== 'undefined' && Security.sanitize) {
+        safeMessage = Security.sanitize(message);
+    }
+    
+    elements.notification.textContent = safeMessage;
+    elements.notification.className = 'notification ' + type;
     elements.notification.classList.add('show');
 
-    setTimeout(() => {
+    setTimeout(function() {
         elements.notification.classList.remove('show');
     }, 4000);
 }
-
-// Cleanup on page unload
-window.addEventListener('beforeunload', () => {
-    if (rateLimitInterval) {
-        clearInterval(rateLimitInterval);
-    }
-});
